@@ -1,13 +1,25 @@
 import SwiftUI
 
 struct MessageFeedView: View {
+    @Environment(SessionStore.self) private var store
+
     let messages: [ParsedMessage]
-    var liveMessages: [LiveMessage] = []
-    var streamingMessage: LiveMessage?
+    let isInteractive: Bool
 
     /// Throttle: only allow one scrollToBottom per interval.
     @State private var scrollThrottleTask: Task<Void, Never>?
     @State private var needsScroll = false
+
+    // Read live data directly from the @Observable store so SwiftUI's
+    // observation tracking invalidates this view immediately on mutation,
+    // bypassing any struct-diffing that can drop high-frequency updates.
+    private var liveMessages: [LiveMessage] {
+        isInteractive ? store.liveMessages : []
+    }
+
+    private var streamingMessage: LiveMessage? {
+        isInteractive ? store.currentStreamingMessage : nil
+    }
 
     private var visibleMessages: [ParsedMessage] {
         messages.filter { $0.type == .user || $0.type == .assistant }
@@ -17,9 +29,10 @@ struct MessageFeedView: View {
         !visibleMessages.isEmpty || !liveMessages.isEmpty || streamingMessage != nil
     }
 
-    /// Lightweight check: did the streaming content grow? Uses count instead of full string equality.
+    /// Lightweight check: did the streaming content grow?
     private var streamingLength: Int {
-        streamingMessage?.textAccumulator.count ?? -1
+        (streamingMessage?.textAccumulator.count ?? 0)
+        + (streamingMessage?.thinkingAccumulator.count ?? 0)
     }
 
     var body: some View {
