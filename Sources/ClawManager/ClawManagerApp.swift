@@ -24,12 +24,12 @@ struct ClawManagerApp: App {
             .environment(sessionStore)
             .environment(uiState)
             .onAppear {
+                Diag.log(.info, .app, "App launched")
                 sessionStore.startMonitoring()
             }
             .preferredColorScheme(.dark)
             .frame(minWidth: 880, minHeight: 600)
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -53,6 +53,29 @@ struct ClawManagerApp: App {
                     uiState.clearFilters()
                 }
                 .keyboardShortcut(.delete, modifiers: .command)
+            }
+
+            CommandMenu("Debug") {
+                Button("Dump State Now") {
+                    Task { await sessionStore.dumpState() }
+                    Diag.log(.info, .state, "Manual state dump triggered")
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Button("Clear Diagnostic Log") {
+                    try? FileManager.default.removeItem(atPath: Diag.logPath)
+                    Diag.log(.info, .app, "Diagnostic log cleared")
+                }
+
+                Divider()
+
+                Button("Reveal Log in Finder") {
+                    NSWorkspace.shared.selectFile(Diag.logPath, inFileViewerRootedAtPath: "/tmp")
+                }
+
+                Button("Reveal State in Finder") {
+                    NSWorkspace.shared.selectFile(Diag.statePath, inFileViewerRootedAtPath: "/tmp")
+                }
             }
         }
     }
