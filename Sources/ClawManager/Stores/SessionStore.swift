@@ -263,10 +263,21 @@ final class SessionStore {
 
         case .messageUpdated(let msg):
             currentStreamingMessage = msg
+            // If the CLI resumed streaming text/thinking after a tool call,
+            // the tool was auto-approved — clear the stale approval bar.
+            // (Manually approved tools already clear via approveToolCall().)
+            if pendingToolApproval != nil {
+                pendingToolApproval = nil
+            }
 
         case .messageCompleted(let msg):
             currentStreamingMessage = nil
             liveMessages.append(msg)
+            // Clear any stale approval bar if the message completed
+            // without user action (e.g., tool was the last block and auto-approved).
+            if pendingToolApproval != nil {
+                pendingToolApproval = nil
+            }
 
         case .toolCallStarted(let toolCall):
             // If we have a queued auto-action (from connectAndApprove/Reject),
