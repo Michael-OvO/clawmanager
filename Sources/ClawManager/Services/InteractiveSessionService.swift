@@ -94,7 +94,6 @@ actor InteractiveSessionService {
             "--output-format", "stream-json",
             "--input-format", "stream-json",
             "--include-partial-messages",
-            "--dangerously-skip-permissions",
             "--verbose"
         ]
         proc.currentDirectoryURL = URL(fileURLWithPath: workspacePath)
