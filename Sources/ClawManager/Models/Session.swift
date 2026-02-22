@@ -31,8 +31,8 @@ struct SessionSummary: Identifiable, Sendable, Equatable {
 }
 
 struct SessionDetail: Sendable {
-    let summary: SessionSummary
-    let messages: [ParsedMessage]
+    var summary: SessionSummary
+    var messages: [ParsedMessage]
     let subagents: [SubagentSummary]
 }
 

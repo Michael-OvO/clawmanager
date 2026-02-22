@@ -11,26 +11,23 @@ final class SessionStore {
     var isLoading = true
     var selectedDetail: SessionDetail?
 
-    // MARK: - Interactive Session State
-    var interactiveSessionId: String?
-    var connectionState: ConnectionState = .disconnected
-    var liveMessages: [LiveMessage] = []
-    var currentStreamingMessage: LiveMessage?
-    var pendingToolApproval: LiveToolCall?
-
     // MARK: - Private
     private let discovery = SessionDiscoveryService()
     private let fileWatcher = FileWatcherService()
     private var watcherSubscription: AnyCancellable?
     private var pollingTask: Task<Void, Never>?
-    private let interactiveService = InteractiveSessionService()
-    private var interactiveEventTask: Task<Void, Never>?
+    private let tailService = SessionTailService()
+    private var tailTask: Task<Void, Never>?
+    private var stateDumpTask: Task<Void, Never>?
+    private let startTime = Date()
 
     init() {}
 
     // MARK: - Monitoring Lifecycle
 
     func startMonitoring() {
+        Diag.log(.info, .app, "startMonitoring")
+
         // Initial load
         Task {
             await refresh()
@@ -55,19 +52,31 @@ final class SessionStore {
                 await refresh()
             }
         }
+
+        // Periodic state snapshot (every 3s) for diagnostic probing
+        stateDumpTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                await dumpState()
+            }
+        }
     }
 
     func stopMonitoring() {
+        Diag.log(.info, .app, "stopMonitoring")
         pollingTask?.cancel()
+        stateDumpTask?.cancel()
         watcherSubscription?.cancel()
         fileWatcher.stopWatching()
-        disconnectFromSession()
+        stopTailing()
     }
 
     // MARK: - Refresh
 
     func refresh() async {
+        let t0 = Diag.now()
         let newSessions = await discovery.discoverAll()
+        Diag.elapsed(t0, .discovery, "discoverAll")
 
         // Build projects from the sessions we already have (avoid double scan)
         var projectMap: [String: Project] = [:]
@@ -93,28 +102,37 @@ final class SessionStore {
         }
 
         // Only update if data actually changed to prevent unnecessary SwiftUI redraws
-        if sessions != newSessions {
+        let sessionsChanged = sessions != newSessions
+        if sessionsChanged {
             sessions = newSessions
+            Diag.log(.info, .discovery, "Sessions updated", data: [
+                "total": newSessions.count,
+                "active": newSessions.filter { $0.status == .active }.count,
+                "waiting": newSessions.filter { $0.status == .waiting }.count
+            ])
         }
         if projects != newProjects {
             projects = newProjects
         }
         if isLoading { isLoading = false }
 
-        // If we have a selected detail, refresh it only when the summary actually changed.
-        // Skip entirely during an active interactive session — the live event stream
-        // provides real-time updates, and reassigning selectedDetail would destroy
-        // the InputBarView's focus state.
+        // If we have a selected detail, refresh its summary when it changed.
+        // Skip full message reload if we're tailing — the tail stream handles
+        // new messages incrementally, and reassigning selectedDetail would
+        // reset scroll position.
         if let detail = selectedDetail {
-            let isInteractiveTarget = interactiveSessionId == detail.summary.sessionId
-                && connectionState == .connected
-            if !isInteractiveTarget,
-               let updated = newSessions.first(where: { $0.sessionId == detail.summary.sessionId }),
+            let isTailing = tailTask != nil
+            if let updated = newSessions.first(where: { $0.sessionId == detail.summary.sessionId }),
                updated != detail.summary {
-                let url = URL(fileURLWithPath: updated.jsonlPath)
-                let messages = (try? JSONLParser.readAll(at: url)) ?? []
-                let subagents = SubagentLoader.loadSubagents(sessionId: updated.sessionId, jsonlPath: updated.jsonlPath)
-                selectedDetail = SessionDetail(summary: updated, messages: messages, subagents: subagents)
+                if isTailing {
+                    // Only update the summary metadata, keep messages intact
+                    selectedDetail?.summary = updated
+                } else {
+                    let url = URL(fileURLWithPath: updated.jsonlPath)
+                    let messages = (try? JSONLParser.readAll(at: url)) ?? []
+                    let subagents = SubagentLoader.loadSubagents(sessionId: updated.sessionId, jsonlPath: updated.jsonlPath)
+                    selectedDetail = SessionDetail(summary: updated, messages: messages, subagents: subagents)
+                }
             }
         }
     }
@@ -124,187 +142,110 @@ final class SessionStore {
     func loadDetail(for sessionId: String) async {
         guard let summary = sessions.first(where: { $0.sessionId == sessionId }) else {
             selectedDetail = nil
+            stopTailing()
             return
         }
 
+        Diag.log(.info, .detail, "Loading detail", data: [
+            "sessionId": String(sessionId.prefix(8)),
+            "project": summary.projectName,
+            "status": "\(summary.status)"
+        ])
+
         let url = URL(fileURLWithPath: summary.jsonlPath)
+        let t1 = Diag.now()
         let messages = (try? JSONLParser.readAll(at: url)) ?? []
+        Diag.elapsed(t1, .detail, "readAll")
         let subagents = SubagentLoader.loadSubagents(sessionId: summary.sessionId, jsonlPath: summary.jsonlPath)
         selectedDetail = SessionDetail(summary: summary, messages: messages, subagents: subagents)
+
+        Diag.log(.info, .detail, "Detail loaded", data: [
+            "messageCount": messages.count,
+            "subagentCount": subagents.count
+        ])
+
+        // Start tailing from the current file size so we only get NEW lines
+        let fileSize = Self.fileSize(at: summary.jsonlPath)
+        startTailing(path: summary.jsonlPath, fromOffset: fileSize)
     }
 
     func clearDetail() {
+        Diag.log(.info, .detail, "Cleared detail")
         selectedDetail = nil
+        stopTailing()
     }
 
-    // MARK: - Interactive Session
+    // MARK: - JSONL File Tailing
 
-    /// Connect to a session. This immediately sets the UI to "connected" state
-    /// and opens a persistent event stream. The actual CLI process is spawned
-    /// lazily when the user sends their first message (or immediately if the
-    /// session has pending work like a tool approval).
-    func connectToSession(_ sessionId: String) {
-        // Don't reconnect to the same session if already connected
-        guard !(connectionState == .connected && interactiveSessionId == sessionId) else { return }
-        guard let summary = sessions.first(where: { $0.sessionId == sessionId }) else { return }
+    private func startTailing(path: String, fromOffset: UInt64) {
+        stopTailing()
 
-        // Tear down any previous interactive session
-        interactiveEventTask?.cancel()
-        interactiveEventTask = nil
-
-        interactiveSessionId = sessionId
-        connectionState = .connected
-        liveMessages = []
-        currentStreamingMessage = nil
-        pendingToolApproval = nil
-
-        // Open a persistent event stream from the service
-        interactiveEventTask = Task {
-            let stream = await interactiveService.openStream(
-                sessionId: sessionId,
-                workspacePath: summary.workspacePath
-            )
-            for await event in stream {
-                handleInteractiveEvent(event)
-            }
-            // Stream ended (disconnect was called)
-        }
-
-        // If the session has pending work (tool approval, question), spawn
-        // the CLI process immediately so the pending event arrives.
-        if summary.pendingInteraction != nil {
-            Task {
-                await interactiveService.ensureProcess()
+        tailTask = Task {
+            let stream = await tailService.startTailing(path: path, fromOffset: fromOffset)
+            for await message in stream {
+                guard !Task.isCancelled else { break }
+                // Append new messages to the detail view in real time
+                selectedDetail?.messages.append(message)
             }
         }
     }
 
-    func disconnectFromSession() {
-        interactiveEventTask?.cancel()
-        interactiveEventTask = nil
-
-        let service = interactiveService
-        Task { await service.disconnect() }
-
-        interactiveSessionId = nil
-        connectionState = .disconnected
-        liveMessages = []
-        currentStreamingMessage = nil
-        pendingToolApproval = nil
+    private func stopTailing() {
+        tailTask?.cancel()
+        tailTask = nil
+        Task { await tailService.stopTailing() }
     }
 
-    func sendInteractiveMessage(_ text: String) {
-        guard connectionState == .connected else { return }
+    // MARK: - State Snapshot (for diagnostic probing)
 
-        // Add user message to live messages
-        let userMsg = LiveMessage(
-            id: UUID().uuidString,
-            role: .user,
-            textAccumulator: text,
-            thinkingAccumulator: "",
-            toolCalls: [],
-            isComplete: true,
-            timestamp: Date()
+    func dumpState() async {
+        let tailInfo = await tailService.diagnosticInfo
+
+        let sessionStats = StateSnapshot.SessionStats(
+            total: sessions.count,
+            active: sessions.filter { $0.status == .active }.count,
+            waiting: sessions.filter { $0.status == .waiting }.count,
+            idle: sessions.filter { $0.status == .idle }.count,
+            stale: sessions.filter { $0.status == .stale }.count
         )
-        liveMessages.append(userMsg)
 
-        // Send via service — it will spawn a process if needed
-        Task {
-            await interactiveService.sendMessage(text)
+        let selected: StateSnapshot.SelectedSessionInfo?
+        if let detail = selectedDetail {
+            selected = StateSnapshot.SelectedSessionInfo(
+                sessionId: String(detail.summary.sessionId.prefix(8)),
+                project: detail.summary.projectName,
+                status: "\(detail.summary.status)",
+                messageCount: detail.messages.count,
+                hasPendingInteraction: detail.summary.pendingInteraction != nil,
+                pendingToolName: detail.summary.pendingInteraction?.toolName
+            )
+        } else {
+            selected = nil
         }
+
+        let tail: StateSnapshot.TailInfo = StateSnapshot.TailInfo(
+            active: tailInfo.active,
+            path: tailInfo.path.map { ($0 as NSString).lastPathComponent },
+            offsetBytes: tailInfo.offset,
+            messagesTailed: tailInfo.messagesTailed
+        )
+
+        let snapshot = StateSnapshot(
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            sessions: sessionStats,
+            projects: projects.count,
+            selectedSession: selected,
+            tail: tail
+        )
+
+        Diag.writeState(snapshot)
     }
 
-    func approveToolCall() {
-        pendingToolApproval = nil
-        Task {
-            await interactiveService.approveToolCall()
-        }
-    }
+    // MARK: - Helpers
 
-    func rejectToolCall() {
-        pendingToolApproval = nil
-        Task {
-            await interactiveService.rejectToolCall()
-        }
-    }
-
-    // MARK: - Connect-and-Approve (for read-only sessions)
-
-    /// Queued action to execute when the CLI re-emits the pending tool call after connecting.
-    private var pendingAutoAction: AutoAction?
-
-    private enum AutoAction {
-        case approve
-        case reject
-    }
-
-    /// Connect to a session and auto-approve its pending tool call.
-    func connectAndApprove(_ sessionId: String) {
-        pendingAutoAction = .approve
-        connectToSession(sessionId)
-    }
-
-    /// Connect to a session and auto-reject its pending tool call.
-    func connectAndReject(_ sessionId: String) {
-        pendingAutoAction = .reject
-        connectToSession(sessionId)
-    }
-
-    // MARK: - Interactive Event Handling
-
-    private func handleInteractiveEvent(_ event: InteractiveEvent) {
-        switch event {
-        case .connectionChanged(let state):
-            // Only apply connection changes if they're errors.
-            // Normal connection state is managed by connectToSession/disconnectFromSession.
-            if case .error = state {
-                connectionState = state
-            }
-
-        case .messageUpdated(let msg):
-            currentStreamingMessage = msg
-            // If the CLI resumed streaming text/thinking after a tool call,
-            // the tool was auto-approved — clear the stale approval bar.
-            // (Manually approved tools already clear via approveToolCall().)
-            if pendingToolApproval != nil {
-                pendingToolApproval = nil
-            }
-
-        case .messageCompleted(let msg):
-            currentStreamingMessage = nil
-            liveMessages.append(msg)
-            // Clear any stale approval bar if the message completed
-            // without user action (e.g., tool was the last block and auto-approved).
-            if pendingToolApproval != nil {
-                pendingToolApproval = nil
-            }
-
-        case .toolCallStarted(let toolCall):
-            // If we have a queued auto-action (from connectAndApprove/Reject),
-            // execute it immediately instead of showing the approval bar.
-            if let action = pendingAutoAction {
-                pendingAutoAction = nil
-                switch action {
-                case .approve: approveToolCall()
-                case .reject:  rejectToolCall()
-                }
-            } else {
-                pendingToolApproval = toolCall
-            }
-
-        case .resultReceived:
-            pendingToolApproval = nil
-            // Refresh to pick up any file changes made during the turn
-            Task { await refresh() }
-
-        case .processExited:
-            // CLI process ended normally after completing a turn.
-            // Keep connectionState as .connected — the user can send another message.
-            currentStreamingMessage = nil
-            Task { await refresh() }
-
-        case .error(let message):
-            connectionState = .error(message)
-        }
+    private static func fileSize(at path: String) -> UInt64 {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? UInt64 else { return 0 }
+        return size
     }
 }

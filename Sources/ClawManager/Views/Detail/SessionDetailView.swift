@@ -4,26 +4,11 @@ struct SessionDetailView: View {
     @Environment(SessionStore.self) private var store
     @Environment(UIState.self) private var uiState
 
-    private var isThisSessionInteractive: Bool {
-        guard let detail = store.selectedDetail else { return false }
-        return store.interactiveSessionId == detail.summary.sessionId
-    }
-
     var body: some View {
         Group {
             if let detail = store.selectedDetail {
                 VStack(spacing: 0) {
-                    DetailHeaderView(
-                        summary: detail.summary,
-                        connectionState: isThisSessionInteractive ? store.connectionState : .disconnected,
-                        isInteractive: isThisSessionInteractive,
-                        onConnect: {
-                            store.connectToSession(detail.summary.sessionId)
-                        },
-                        onDisconnect: {
-                            store.disconnectFromSession()
-                        }
-                    )
+                    DetailHeaderView(summary: detail.summary)
 
                     Divider()
                         .overlay(DS.Color.Border.subtle)
@@ -36,45 +21,25 @@ struct SessionDetailView: View {
                             .overlay(DS.Color.Border.subtle)
                     }
 
-                    // Message feed — reads live/streaming data directly from @Observable store
-                    MessageFeedView(
-                        messages: detail.messages,
-                        isInteractive: isThisSessionInteractive
-                    )
-                    .layoutPriority(1)
+                    // Message feed — grows automatically as the tail service
+                    // appends new ParsedMessage objects from the JSONL file
+                    MessageFeedView(messages: detail.messages)
+                        .frame(maxHeight: .infinity)
 
-                    // Tool approval bar — unified for both interactive and read-only sessions
-                    if let toolCall = store.pendingToolApproval, isThisSessionInteractive {
-                        // Interactive: approve/reject directly via the live stdin pipe
-                        ToolApprovalBar(
-                            toolCall: toolCall,
-                            onApprove: { store.approveToolCall() },
-                            onReject: { store.rejectToolCall() }
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    } else if let pending = detail.summary.pendingInteraction, !isThisSessionInteractive {
-                        // Read-only: connect to the session and auto-approve/reject
-                        ToolApprovalBar(
-                            interaction: pending,
-                            onApprove: { store.connectAndApprove(detail.summary.sessionId) },
-                            onReject: { store.connectAndReject(detail.summary.sessionId) }
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-
-                    // Input bar (when connected)
-                    if isThisSessionInteractive && store.connectionState.isActive {
-                        InputBarView { text in
-                            store.sendInteractiveMessage(text)
-                        }
+                    // Read-only pending interaction indicator
+                    if let pending = detail.summary.pendingInteraction {
+                        PendingInteractionBar(interaction: pending)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
+                .frame(maxHeight: .infinity)
             } else {
                 EmptyStateView(
                     icon: "sidebar.squares.right",
                     title: "Select a session",
                     description: "Choose a session from the list to view its details"
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(DS.Color.Surface.base)
@@ -85,6 +50,60 @@ struct SessionDetailView: View {
                 }
             } else {
                 store.clearDetail()
+            }
+        }
+    }
+}
+
+// MARK: - Read-Only Pending Interaction Bar
+//
+// Shows when a session is waiting for tool approval or a user question,
+// but as an informational display only — the user approves in their
+// actual Claude Code session (terminal or VSCode), not here.
+
+private struct PendingInteractionBar: View {
+    let interaction: PendingInteraction
+    @State private var borderPulse = false
+
+    private var icon: String {
+        interaction.type == .question ? "questionmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private var label: String {
+        if interaction.type == .question {
+            return "Waiting for your answer"
+        }
+        return "Waiting for approval: \(interaction.toolName ?? "tool")"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(DS.Color.Status.waitingDot.opacity(borderPulse ? 0.6 : 0.3))
+                .frame(height: 2)
+
+            HStack(spacing: DS.Space.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(DS.Color.Status.waitingDot)
+
+                Text(label)
+                    .font(DS.Typography.small)
+                    .foregroundStyle(DS.Color.Text.secondary)
+
+                Spacer()
+
+                Text("Respond in Claude Code")
+                    .font(DS.Typography.micro)
+                    .foregroundStyle(DS.Color.Text.quaternary)
+            }
+            .padding(.horizontal, DS.Space.xl)
+            .padding(.vertical, DS.Space.md)
+        }
+        .background(DS.Color.Status.waitingDot.opacity(0.06))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                borderPulse = true
             }
         }
     }

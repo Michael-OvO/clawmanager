@@ -2,10 +2,6 @@ import SwiftUI
 
 struct DetailHeaderView: View {
     let summary: SessionSummary
-    var connectionState: ConnectionState = .disconnected
-    var isInteractive: Bool = false
-    var onConnect: (() -> Void)?
-    var onDisconnect: (() -> Void)?
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
@@ -26,8 +22,11 @@ struct DetailHeaderView: View {
 
                     Spacer()
 
-                    // Action buttons
-                    actionButtons
+                    // Copy session ID button
+                    ActionButton(icon: "doc.on.doc", tooltip: "Copy Session ID") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(summary.sessionId, forType: .string)
+                    }
                 }
 
                 // Metadata row
@@ -59,29 +58,6 @@ struct DetailHeaderView: View {
         }
         .padding(.horizontal, DS.Space.xl)
         .padding(.vertical, DS.Space.lg)
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: DS.Space.sm) {
-            if isInteractive {
-                ConnectionIndicator(state: connectionState)
-            }
-
-            ActionButton(icon: "doc.on.doc", tooltip: "Copy Session ID") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(summary.sessionId, forType: .string)
-            }
-
-            if connectionState.isActive {
-                ActionButton(icon: "xmark.circle", tooltip: "Disconnect") {
-                    onDisconnect?()
-                }
-            } else {
-                ActionButton(icon: "play.circle.fill", tooltip: "Connect") {
-                    onConnect?()
-                }
-            }
-        }
     }
 
     private var separator: some View {
