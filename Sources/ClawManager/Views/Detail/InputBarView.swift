@@ -91,7 +91,9 @@ private struct InputTextView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.autoresizingMask = [.width]
 
+        // Store references for the event monitor (we're on MainActor here)
         context.coordinator.textView = textView
+        context.coordinator.submitAction = onSubmit
         context.coordinator.installEventMonitor()
 
         return textView
@@ -137,40 +139,63 @@ private struct InputTextView: NSViewRepresentable {
 
         func installEventMonitor() {
             removeEventMonitor()
-            submitAction = parent.onSubmit
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self,
-                      let textView = self.textView,
-                      textView.window?.firstResponder === textView else {
-                    return event // not our text view — pass through
-                }
+                guard let self else { return event }
+                // Access nonisolated(unsafe) refs — safe, we're on main thread
+                guard let textView = self.textView else { return event }
 
-                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                // NSEvent's Sendable conformance is explicitly unavailable, so we
+                // wrap it going IN and return a simple Sendable enum coming OUT.
+                // The submit closure also can't cross, so we signal it and call outside.
+                let safeEvent = UncheckedSendableEvent(event)
 
-                // Command-key combos (Cmd+C, Cmd+V, Cmd+K, etc.) → pass through
-                if flags.contains(.command) {
-                    return event
-                }
+                let action: KeyAction = MainActor.assumeIsolated {
+                    let event = safeEvent.event
 
-                // Escape → pass through to SwiftUI
-                if event.keyCode == 53 {
-                    return event
-                }
-
-                // Return key
-                if event.keyCode == 36 {
-                    if flags.contains(.shift) {
-                        textView.insertNewlineIgnoringFieldEditor(nil)
-                    } else {
-                        self.submitAction?()
+                    guard textView.window?.firstResponder === textView else {
+                        return .passthrough
                     }
-                    return nil // consumed
+
+                    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+                    // Command-key combos (Cmd+C, Cmd+V, Cmd+K, etc.) → pass through
+                    if flags.contains(.command) { return .passthrough }
+
+                    // Escape → pass through to SwiftUI
+                    if event.keyCode == 53 { return .passthrough }
+
+                    // Return key
+                    if event.keyCode == 36 {
+                        if flags.contains(.shift) {
+                            textView.insertNewlineIgnoringFieldEditor(nil)
+                        }
+                        return flags.contains(.shift) ? .consumed : .submit
+                    }
+
+                    // All other keys → route directly to text input system
+                    textView.interpretKeyEvents([event])
+                    return .consumed
                 }
 
-                // All other keys → route directly to text input system
-                textView.interpretKeyEvents([event])
-                return nil // consumed
+                switch action {
+                case .passthrough: return event
+                case .consumed:    return nil
+                case .submit:      self.submitAction?(); return nil
+                }
             }
+        }
+
+        /// Wrapper to let NSEvent cross into MainActor.assumeIsolated.
+        /// Safe because local event monitors always fire on the main thread.
+        private struct UncheckedSendableEvent: @unchecked Sendable {
+            let event: NSEvent
+            init(_ event: NSEvent) { self.event = event }
+        }
+
+        private enum KeyAction: Sendable {
+            case passthrough  // let the event continue to SwiftUI
+            case consumed     // we handled it (typing, shift+return)
+            case submit       // return key → call submit outside MainActor
         }
 
         func removeEventMonitor() {
