@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 @Observable
 final class UIState {
@@ -38,7 +39,9 @@ final class UIState {
     }
 
     func toggleCommandPalette() {
-        isCommandPaletteOpen.toggle()
+        withAnimation(.easeOut(duration: 0.2)) {
+            isCommandPaletteOpen.toggle()
+        }
     }
 
     func clearFilters() {

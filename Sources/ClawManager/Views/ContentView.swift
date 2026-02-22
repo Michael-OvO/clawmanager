@@ -25,6 +25,5 @@ struct ContentView: View {
             }
         }
         .background(DS.Color.Surface.base)
-        .animation(DS.Motion.normal, value: uiState.isCommandPaletteOpen)
     }
 }
