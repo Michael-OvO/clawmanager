@@ -36,16 +36,16 @@ struct SessionDetailView: View {
                             .overlay(DS.Color.Border.subtle)
                     }
 
-                    // Message feed (with live messages when interactive)
+                    // Message feed — reads live/streaming data directly from @Observable store
                     MessageFeedView(
                         messages: detail.messages,
-                        liveMessages: isThisSessionInteractive ? store.liveMessages : [],
-                        streamingMessage: isThisSessionInteractive ? store.currentStreamingMessage : nil
+                        isInteractive: isThisSessionInteractive
                     )
                     .layoutPriority(1)
 
-                    // Tool approval bar (interactive) or pending interaction bar (read-only)
+                    // Tool approval bar — unified for both interactive and read-only sessions
                     if let toolCall = store.pendingToolApproval, isThisSessionInteractive {
+                        // Interactive: approve/reject directly via the live stdin pipe
                         ToolApprovalBar(
                             toolCall: toolCall,
                             onApprove: { store.approveToolCall() },
@@ -53,8 +53,13 @@ struct SessionDetailView: View {
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     } else if let pending = detail.summary.pendingInteraction, !isThisSessionInteractive {
-                        PendingInteractionBar(interaction: pending)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        // Read-only: connect to the session and auto-approve/reject
+                        ToolApprovalBar(
+                            interaction: pending,
+                            onApprove: { store.connectAndApprove(detail.summary.sessionId) },
+                            onReject: { store.connectAndReject(detail.summary.sessionId) }
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
                     // Input bar (when connected)
@@ -62,11 +67,8 @@ struct SessionDetailView: View {
                         InputBarView { text in
                             store.sendInteractiveMessage(text)
                         }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(DS.Motion.springSmooth, value: store.pendingToolApproval != nil)
-                .animation(DS.Motion.springSmooth, value: isThisSessionInteractive)
             } else {
                 EmptyStateView(
                     icon: "sidebar.squares.right",

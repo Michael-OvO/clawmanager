@@ -228,6 +228,28 @@ final class SessionStore {
         }
     }
 
+    // MARK: - Connect-and-Approve (for read-only sessions)
+
+    /// Queued action to execute when the CLI re-emits the pending tool call after connecting.
+    private var pendingAutoAction: AutoAction?
+
+    private enum AutoAction {
+        case approve
+        case reject
+    }
+
+    /// Connect to a session and auto-approve its pending tool call.
+    func connectAndApprove(_ sessionId: String) {
+        pendingAutoAction = .approve
+        connectToSession(sessionId)
+    }
+
+    /// Connect to a session and auto-reject its pending tool call.
+    func connectAndReject(_ sessionId: String) {
+        pendingAutoAction = .reject
+        connectToSession(sessionId)
+    }
+
     // MARK: - Interactive Event Handling
 
     private func handleInteractiveEvent(_ event: InteractiveEvent) {
@@ -247,7 +269,17 @@ final class SessionStore {
             liveMessages.append(msg)
 
         case .toolCallStarted(let toolCall):
-            pendingToolApproval = toolCall
+            // If we have a queued auto-action (from connectAndApprove/Reject),
+            // execute it immediately instead of showing the approval bar.
+            if let action = pendingAutoAction {
+                pendingAutoAction = nil
+                switch action {
+                case .approve: approveToolCall()
+                case .reject:  rejectToolCall()
+                }
+            } else {
+                pendingToolApproval = toolCall
+            }
 
         case .resultReceived:
             pendingToolApproval = nil

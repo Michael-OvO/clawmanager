@@ -1,15 +1,34 @@
 import SwiftUI
 
 struct ToolApprovalBar: View {
-    let toolCall: LiveToolCall
+    let toolName: String
+    let inputJSON: String
     let onApprove: () -> Void
     let onReject: () -> Void
 
     @State private var isExpanded = false
     @State private var borderPulse = false
 
+    /// Convenience initializer from a LiveToolCall.
+    init(toolCall: LiveToolCall, onApprove: @escaping () -> Void, onReject: @escaping () -> Void) {
+        self.toolName = toolCall.name
+        self.inputJSON = toolCall.inputJson
+        self.onApprove = onApprove
+        self.onReject = onReject
+    }
+
+    /// Convenience initializer from a PendingInteraction (read-only sessions).
+    init(interaction: PendingInteraction, onApprove: @escaping () -> Void, onReject: @escaping () -> Void) {
+        self.toolName = interaction.toolName ?? "Unknown"
+        self.inputJSON = interaction.toolInputJSON ?? ""
+        self.onApprove = onApprove
+        self.onReject = onReject
+    }
+
+    private var isBash: Bool { toolName == "Bash" }
+
     private var toolIcon: String {
-        switch toolCall.name {
+        switch toolName {
         case "Bash":          "terminal.fill"
         case "Read":          "doc.text.fill"
         case "Write":         "doc.fill"
@@ -22,6 +41,18 @@ struct ToolApprovalBar: View {
         }
     }
 
+    /// Parsed tool input.
+    private var parsedInput: [String: Any]? {
+        guard let data = inputJSON.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// The bash command string, if this is a Bash tool call.
+    private var bashCommand: String? {
+        guard isBash, let json = parsedInput else { return nil }
+        return json["command"] as? String
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Pulsing amber top border
@@ -30,7 +61,7 @@ struct ToolApprovalBar: View {
                 .frame(height: 2)
 
             VStack(spacing: DS.Space.sm) {
-                // Main row
+                // Main row: icon + tool name + actions
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 16))
@@ -43,12 +74,13 @@ struct ToolApprovalBar: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(DS.Color.Text.tertiary)
 
-                            Text(toolCall.name)
+                            Text(toolName)
                                 .font(DS.Typography.captionMono)
                                 .foregroundStyle(DS.Color.Text.secondary)
                         }
 
-                        if let brief = briefInput {
+                        // For non-Bash tools, show the brief description inline
+                        if !isBash, let brief = briefInput {
                             Text(brief)
                                 .font(DS.Typography.caption)
                                 .foregroundStyle(DS.Color.Text.tertiary)
@@ -59,7 +91,7 @@ struct ToolApprovalBar: View {
                     Spacer()
 
                     // Expand/collapse details
-                    if !toolCall.inputJson.isEmpty {
+                    if !inputJSON.isEmpty {
                         Button {
                             withAnimation(DS.Motion.springSmooth) {
                                 isExpanded.toggle()
@@ -103,10 +135,20 @@ struct ToolApprovalBar: View {
                     .keyboardShortcut(.return, modifiers: [])
                 }
 
-                // Expanded JSON details
+                // Bash command preview — always visible (the whole point of the bar)
+                if let cmd = bashCommand {
+                    bashCommandPreview(cmd)
+                }
+
+                // Edit preview — show old/new strings or file path
+                if toolName == "Edit" || toolName == "Write" {
+                    filePreview
+                }
+
+                // Expanded JSON details (for inspecting the full raw input)
                 if isExpanded {
                     ScrollView {
-                        Text(toolCall.inputJson)
+                        Text(inputJSON)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(DS.Color.Text.secondary)
                             .textSelection(.enabled)
@@ -135,11 +177,76 @@ struct ToolApprovalBar: View {
         }
     }
 
-    private var briefInput: String? {
-        guard let data = toolCall.inputJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+    // MARK: - Bash Command Preview
+
+    @ViewBuilder
+    private func bashCommandPreview(_ command: String) -> some View {
+        HStack(spacing: 0) {
+            Text("$")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(DS.Color.Accent.primary.opacity(0.6))
+                .padding(.trailing, DS.Space.sm)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(command)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(DS.Color.Text.primary)
+                    .textSelection(.enabled)
+            }
+
+            Spacer(minLength: DS.Space.sm)
+
+            CopyButton(text: command)
         }
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .fill(DS.Color.Surface.raised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .stroke(DS.Color.Border.subtle, lineWidth: 1)
+        )
+    }
+
+    // MARK: - File Preview (Edit/Write)
+
+    @ViewBuilder
+    private var filePreview: some View {
+        if let json = parsedInput, let path = json["file_path"] as? String {
+            HStack(spacing: DS.Space.sm) {
+                Image(systemName: toolName == "Edit" ? "pencil.line" : "doc.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.Color.Text.tertiary)
+
+                Text(path)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(DS.Color.Text.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: DS.Space.sm)
+
+                CopyButton(text: path)
+            }
+            .padding(.horizontal, DS.Space.md)
+            .padding(.vertical, DS.Space.sm)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .fill(DS.Color.Surface.raised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .stroke(DS.Color.Border.subtle, lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Brief Input (for other tools)
+
+    private var briefInput: String? {
+        guard let json = parsedInput else { return nil }
         if let cmd = json["command"] as? String { return Formatters.truncate(cmd, to: 60) }
         if let path = json["file_path"] as? String { return (path as NSString).lastPathComponent }
         if let pattern = json["pattern"] as? String { return Formatters.truncate(pattern, to: 40) }

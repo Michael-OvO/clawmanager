@@ -94,6 +94,7 @@ actor InteractiveSessionService {
             "--output-format", "stream-json",
             "--input-format", "stream-json",
             "--include-partial-messages",
+            "--dangerously-skip-permissions",
             "--verbose"
         ]
         proc.currentDirectoryURL = URL(fileURLWithPath: workspacePath)
@@ -382,7 +383,8 @@ actor InteractiveSessionService {
                     isError: false
                 )
                 currentMessage?.toolCalls.append(toolCall)
-                emit(.toolCallStarted(toolCall))
+                // Don't emit toolCallStarted here — inputJson is empty.
+                // We emit at content_block_stop once the full input has streamed in.
             }
 
         case "content_block_delta":
@@ -417,6 +419,9 @@ actor InteractiveSessionService {
             if currentBlockType == "tool_use",
                let lastIdx = currentMessage?.toolCalls.indices.last {
                 currentMessage?.toolCalls[lastIdx].isComplete = true
+                // Emit toolCallStarted NOW with the full inputJson populated.
+                // The CLI will pause here if it needs user approval for this tool.
+                emit(.toolCallStarted(currentMessage!.toolCalls[lastIdx]))
             }
             currentBlockType = nil
 
