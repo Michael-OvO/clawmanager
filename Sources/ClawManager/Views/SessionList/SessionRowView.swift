@@ -6,6 +6,7 @@ struct SessionRowView: View {
 
     @State private var isHovered = false
     @State private var isPressed = false
+    @State private var animating = false
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
@@ -36,11 +37,38 @@ struct SessionRowView: View {
                         .monospacedDigit()
                 }
 
-                // Row 2: Preview text
-                Text(previewText)
-                    .font(DS.Typography.caption)
-                    .foregroundStyle(DS.Color.Text.secondary)
-                    .lineLimit(1)
+                // Row 2: Preview text or thinking indicator
+                if session.status == .active {
+                    HStack(spacing: DS.Space.xs) {
+                        HStack(spacing: DS.Space.xxs) {
+                            ForEach(0..<3, id: \.self) { i in
+                                Circle()
+                                    .fill(DS.Color.Status.activeDot)
+                                    .frame(width: 4, height: 4)
+                                    .scaleEffect(animating ? 1.0 : 0.4)
+                                    .opacity(animating ? 1.0 : 0.2)
+                                    .animation(
+                                        .easeInOut(duration: 0.6)
+                                            .repeatForever(autoreverses: true)
+                                            .delay(Double(i) * 0.15),
+                                        value: animating
+                                    )
+                            }
+                        }
+
+                        Text("Thinking...")
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.Color.Status.activeText)
+                            .italic()
+                    }
+                    .onAppear { animating = true }
+                    .onDisappear { animating = false }
+                } else {
+                    Text(previewText)
+                        .font(DS.Typography.caption)
+                        .foregroundStyle(DS.Color.Text.secondary)
+                        .lineLimit(1)
+                }
 
                 // Row 3: Metadata badges
                 HStack(spacing: DS.Space.md - 4) {

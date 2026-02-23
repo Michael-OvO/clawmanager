@@ -17,6 +17,10 @@ struct ContentView: View {
                 SessionDetailView()
             }
             .navigationSplitViewStyle(.balanced)
+            // Hide the system toolbar background so the window's
+            // DS.Color.Surface.base shows through the title bar area.
+            .toolbarBackground(.hidden, for: .windowToolbar)
+            .toolbar(.hidden, for: .windowToolbar)
 
             // Command palette overlay
             if uiState.isCommandPaletteOpen {

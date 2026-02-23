@@ -14,19 +14,16 @@ struct SessionDetailView: View {
                     Divider()
                         .overlay(DS.Color.Border.subtle)
 
-                    // Subagent panel (above message feed when subagents exist)
-                    if !detail.subagents.isEmpty {
-                        SubagentPanelView(subagents: detail.subagents)
-
-                        Divider()
-                            .overlay(DS.Color.Border.subtle)
-                    }
-
                     // Message feed — StreamingFeedBridge isolates per-character
                     // streaming observation so the rest of SessionDetailView
                     // (header, panels, input bar) doesn't re-render on each token.
                     StreamingFeedBridge(messages: detail.messages)
                         .frame(maxHeight: .infinity)
+                        .overlay(alignment: .top) {
+                            if !detail.subagents.isEmpty {
+                                SubagentPanelView(subagents: detail.subagents)
+                            }
+                        }
 
                     // Live interactive panels (when connected)
                     if let request = store.pendingControlRequest,
@@ -84,6 +81,7 @@ struct SessionDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .ignoresSafeArea(edges: .top)
         .background(DS.Color.Surface.base)
         .onChange(of: uiState.selectedSessionId) { _, newId in
             if let id = newId {

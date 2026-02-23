@@ -3,7 +3,22 @@ import SwiftUI
 struct SubagentPanelView: View {
     let subagents: [SubagentSummary]
 
-    @State private var isExpanded = true
+    @State private var isExpanded = false
+
+    /// Estimated height of one collapsed SubagentRowView (~72pt)
+    /// plus inter-row spacing (xs = 4pt), with list padding (sm = 8pt each side).
+    /// Extra bottom breathing room for small counts (tapers to 0 at 4+).
+    private var adaptiveMaxHeight: CGFloat {
+        let rowHeight: CGFloat = 72
+        let gap = DS.Space.xs
+        let listPadding = DS.Space.sm * 2
+        let extraBottom = max(0, CGFloat(4 - subagents.count)) * DS.Space.md
+        let contentHeight = CGFloat(subagents.count) * rowHeight
+            + CGFloat(max(subagents.count - 1, 0)) * gap
+            + listPadding
+            + extraBottom
+        return min(contentHeight, 360)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,10 +78,15 @@ struct SubagentPanelView: View {
                     .padding(.vertical, DS.Space.sm)
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: 240)
+                .frame(maxHeight: adaptiveMaxHeight)
             }
         }
         .background(DS.Color.Surface.raised)
+        .clipShape(UnevenRoundedRectangle(
+            bottomLeadingRadius: DS.Radius.lg,
+            bottomTrailingRadius: DS.Radius.lg
+        ))
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
     }
 }
 

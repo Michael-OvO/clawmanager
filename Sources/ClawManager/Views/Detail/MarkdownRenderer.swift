@@ -510,9 +510,9 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func tableView(headers: [String], rows: [[String]]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 // Header row
-                HStack(spacing: 0) {
+                GridRow {
                     ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
                         Text(header)
                             .font(DS.Typography.small)
@@ -525,10 +525,11 @@ struct MarkdownRenderer: View {
                 .background(DS.Color.Surface.elevated)
 
                 Divider().overlay(DS.Color.Border.default)
+                    .gridCellUnsizedAxes(.horizontal)
 
                 // Data rows
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
-                    HStack(spacing: 0) {
+                    GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
                             InlineMarkdownText(cell, font: DS.Typography.caption)
                                 .padding(.horizontal, DS.Space.md)

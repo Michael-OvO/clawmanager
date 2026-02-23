@@ -66,7 +66,8 @@ struct DetailHeaderView: View {
             }
         }
         .padding(.horizontal, DS.Space.xl)
-        .padding(.vertical, DS.Space.lg)
+        .padding(.top, DS.Space.lg)
+        .padding(.bottom, DS.Space.lg)
     }
 
     // MARK: - Connection State Helpers

@@ -7,56 +7,66 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title bar area (also serves as drag region for hidden title bar)
-            // Logo is centered via overlay so the traffic light spacer doesn't shift it
-            Color.clear
-                .frame(height: 52)
-                .overlay {
-                    HStack(spacing: DS.Space.xs) {
-                        // Claw icon
-                        Canvas { context, size in
-                            let cx = size.width / 2
-                            let cy = size.height / 2
-                            let slant: CGFloat = 1.5
-                            let halfH: CGFloat = 6
-                            let spacing: CGFloat = 4
+            // Controls toolbar (elevated)
+            VStack(spacing: 0) {
+                // App logo + title
+                HStack(spacing: DS.Space.xs) {
+                    // Claw icon
+                    Canvas { context, size in
+                        let cx = size.width / 2
+                        let cy = size.height / 2
+                        let slant: CGFloat = 1.5
+                        let halfH: CGFloat = 6
+                        let spacing: CGFloat = 4
 
-                            for i in -1...1 {
-                                let dx = CGFloat(i) * spacing
-                                var path = Path()
-                                path.move(to: CGPoint(x: cx + dx + slant, y: cy - halfH))
-                                path.addLine(to: CGPoint(x: cx + dx - slant, y: cy + halfH))
+                        for i in -1...1 {
+                            let dx = CGFloat(i) * spacing
+                            var path = Path()
+                            path.move(to: CGPoint(x: cx + dx + slant, y: cy - halfH))
+                            path.addLine(to: CGPoint(x: cx + dx - slant, y: cy + halfH))
 
-                                context.stroke(
-                                    path,
-                                    with: .color(DS.Color.Accent.primary),
-                                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                                )
-                            }
+                            context.stroke(
+                                path,
+                                with: .color(DS.Color.Accent.primary),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                            )
                         }
-                        .frame(width: 16, height: 14)
-                        .shadow(color: DS.Color.Accent.primary.opacity(0.35), radius: 3)
-
-                        Text("ClawManager")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DS.Color.Text.secondary)
                     }
+                    .frame(width: 16, height: 14)
+                    .shadow(color: DS.Color.Accent.primary.opacity(0.35), radius: 3)
+
+                    Text("ClawManager")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DS.Color.Text.secondary)
                 }
-
-            // Search bar
-            searchBar
-                .padding(.horizontal, DS.Space.md)
+                .frame(maxWidth: .infinity)
+                .padding(.top, DS.Space.lg)
                 .padding(.bottom, DS.Space.md)
 
-            // Status filter chips
-            statusFilters
-                .padding(.horizontal, DS.Space.md)
-                .padding(.bottom, DS.Space.md)
+                // Search bar
+                searchBar
+                    .padding(.horizontal, DS.Space.md)
+                    .padding(.bottom, DS.Space.md)
 
-            Divider()
-                .overlay(DS.Color.Border.subtle)
+                // Status filter chips
+                statusFilters
+                    .padding(.horizontal, DS.Space.md)
+                    .padding(.bottom, DS.Space.md)
+            }
+            .background(DS.Color.Surface.raised)
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [.black.opacity(0.25), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 6)
+                .offset(y: 6)
+                .allowsHitTesting(false)
+            }
+            .zIndex(1)
 
-            // Projects list
+            // Projects list (recessed content well)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: DS.Space.xxs) {
                     Text("PROJECTS")
@@ -86,7 +96,8 @@ struct SidebarView: View {
                 .padding(.horizontal, DS.Space.md)
             }
         }
-        .background(DS.Color.Surface.raised)
+        .ignoresSafeArea(edges: .top)
+        .background(DS.Color.Surface.base)
     }
 
     // MARK: - Search Bar
@@ -183,7 +194,9 @@ struct FlowLayout: Layout {
         return result.size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
         let result = computeLayout(proposal: proposal, subviews: subviews)
         for (index, position) in result.positions.enumerated() {
             subviews[index].place(

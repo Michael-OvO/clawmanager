@@ -134,9 +134,10 @@ struct SplashView: View {
         }
     }
 
-    /// Center of the claw pattern, offset to account for the 15pt leftward slant
-    /// so the visual bounding box (22.5–77.5) centers at x=50 in the 100pt frame.
-    private static let clawCenterX: CGFloat = 57.5
+    /// Center of the claw pattern, offset to account for the 15pt leftward slant.
+    /// Geometric center of the bounding box is at x=52, shifted 2pt right of frame
+    /// center to compensate for the perceptual leftward bias of "///" diagonals.
+    private static let clawCenterX: CGFloat = 59.5
 
     private func clawMark(offset: CGFloat, progress: CGFloat) -> some View {
         Path { path in

@@ -9,31 +9,25 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            header
-                .padding(.horizontal, DS.Space.lg)
-                .padding(.top, DS.Space.md)
-                .padding(.bottom, DS.Space.sm)
-
-            Divider()
-                .overlay(DS.Color.Border.subtle)
-
-            // Session list
+        Group {
             if store.isLoading {
-                Spacer()
-                LoadingDotsView()
-                Spacer()
+                VStack {
+                    Spacer()
+                    LoadingDotsView()
+                    Spacer()
+                }
             } else if filteredSessions.isEmpty {
-                Spacer()
-                EmptyStateView(
-                    icon: "magnifyingglass",
-                    title: "No sessions found",
-                    description: "Try adjusting your search or filters",
-                    actionLabel: uiState.statusFilter != .all || !uiState.searchQuery.isEmpty ? "Clear filters" : nil,
-                    action: { uiState.clearFilters() }
-                )
-                Spacer()
+                VStack {
+                    Spacer()
+                    EmptyStateView(
+                        icon: "magnifyingglass",
+                        title: "No sessions found",
+                        description: "Try adjusting your search or filters",
+                        actionLabel: uiState.statusFilter != .all || !uiState.searchQuery.isEmpty ? "Clear filters" : nil,
+                        action: { uiState.clearFilters() }
+                    )
+                    Spacer()
+                }
             } else {
                 ScrollView {
                     LazyVStack(spacing: DS.Space.sm) {
@@ -56,6 +50,20 @@ struct SessionListView: View {
                 }
             }
         }
+        .clipped()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, DS.Space.lg)
+                    .padding(.top, DS.Space.lg)
+                    .padding(.bottom, DS.Space.sm)
+
+                Divider()
+                    .overlay(DS.Color.Border.subtle)
+            }
+            .background(DS.Color.Surface.base)
+        }
+        .ignoresSafeArea(edges: .top)
         .background(DS.Color.Surface.base)
     }
 

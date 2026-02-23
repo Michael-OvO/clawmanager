@@ -111,21 +111,35 @@ struct MessageFeedView: View {
                             }
                             scrollToBottom(proxy, anchor: .bottom)
                         } label: {
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(DS.Color.Text.secondary)
-                                .frame(width: 28, height: 28)
-                                .background(
-                                    Circle()
-                                        .fill(DS.Color.Surface.overlay)
-                                        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(DS.Color.Border.default, lineWidth: 0.5)
-                                )
+                            HStack(spacing: DS.Space.xs) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 10, weight: .bold))
+
+                                if isHoveringButton {
+                                    Text("Scroll to bottom")
+                                        .font(DS.Typography.micro)
+                                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                                }
+                            }
+                            .foregroundStyle(DS.Color.Text.secondary)
+                            .padding(.horizontal, isHoveringButton ? DS.Space.md : DS.Space.sm)
+                            .padding(.vertical, DS.Space.sm)
+                            .background(
+                                Capsule()
+                                    .fill(DS.Color.Surface.overlay)
+                                    .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(DS.Color.Border.default, lineWidth: 0.5)
+                            )
                         }
                         .buttonStyle(.plain)
+                        .onHover { hovering in
+                            withAnimation(DS.Motion.fast) {
+                                isHoveringButton = hovering
+                            }
+                        }
                         .padding(.bottom, DS.Space.lg)
                         .transition(.opacity)
                     }
