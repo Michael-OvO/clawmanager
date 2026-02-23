@@ -155,6 +155,7 @@ struct StateSnapshot: Codable, Sendable {
     let projects: Int
     let selectedSession: SelectedSessionInfo?
     let tail: TailInfo
+    let interactive: InteractiveInfo
 
     struct SessionStats: Codable, Sendable {
         let total: Int
@@ -171,6 +172,8 @@ struct StateSnapshot: Codable, Sendable {
         let messageCount: Int
         let hasPendingInteraction: Bool
         let pendingToolName: String?
+        let pendingType: String?
+        let permissionMode: String?
     }
 
     struct TailInfo: Codable, Sendable {
@@ -178,6 +181,14 @@ struct StateSnapshot: Codable, Sendable {
         let path: String?
         let offsetBytes: UInt64
         let messagesTailed: Int
+    }
+
+    struct InteractiveInfo: Codable, Sendable {
+        let connected: Bool
+        let sessionId: String?
+        let pid: Int32?
+        let streaming: Bool
+        let pendingRequestId: String?
     }
 }
 
