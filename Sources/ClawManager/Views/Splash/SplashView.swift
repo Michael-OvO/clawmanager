@@ -32,38 +32,10 @@ struct SplashView: View {
             DS.Color.Surface.base
                 .ignoresSafeArea()
 
-            // Layer 1: Deep ambient radial glow
-            RadialGradient(
-                colors: [
-                    DS.Color.Accent.primary.opacity(0.12 * ambientOpacity),
-                    DS.Color.Accent.primary.opacity(0.04 * ambientOpacity),
-                    .clear
-                ],
-                center: .center,
-                startRadius: 20,
-                endRadius: 280
-            )
-            .scaleEffect(ambientScale)
-            .opacity(isBreathing ? 0.7 : 1.0)
-            .ignoresSafeArea()
-
-            // Layer 2: Secondary purple ambient (adds color depth)
-            RadialGradient(
-                colors: [
-                    DS.Color.Accent.secondary.opacity(0.06 * ambientOpacity),
-                    .clear
-                ],
-                center: .center,
-                startRadius: 40,
-                endRadius: 200
-            )
-            .scaleEffect(ambientScale * 1.1)
-            .ignoresSafeArea()
-
             VStack(spacing: DS.Space.xxl) {
                 // Claw marks with glow
                 ZStack {
-                    // Layer 3: Ring burst
+                    // Ring burst
                     Circle()
                         .stroke(
                             DS.Color.Accent.primary.opacity(ringOpacity),
@@ -72,18 +44,49 @@ struct SplashView: View {
                         .frame(width: 120, height: 120)
                         .scaleEffect(ringScale)
 
-                    // Layer 4: Outer bloom shadow (large, soft)
+                    // Outer bloom shadow (large, soft)
                     clawMarksGroup
                         .shadow(color: DS.Color.Accent.primary.opacity(0.3), radius: outerGlow)
 
-                    // Layer 5: Inner crisp glow
+                    // Inner crisp glow
                     clawMarksGroup
                         .shadow(color: DS.Color.Accent.primary.opacity(0.6), radius: innerGlow)
 
-                    // Layer 6: Actual claw marks on top
+                    // Actual claw marks on top
                     clawMarksGroup
                 }
                 .frame(width: 100, height: 100)
+                .background {
+                    // Ambient glow layers — rendered as background so they
+                    // share the icon's center without affecting ZStack layout.
+                    ZStack {
+                        RadialGradient(
+                            colors: [
+                                DS.Color.Accent.primary.opacity(0.12 * ambientOpacity),
+                                DS.Color.Accent.primary.opacity(0.04 * ambientOpacity),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 280
+                        )
+                        .frame(width: 560, height: 560)
+                        .scaleEffect(ambientScale)
+                        .opacity(isBreathing ? 0.7 : 1.0)
+
+                        RadialGradient(
+                            colors: [
+                                DS.Color.Accent.secondary.opacity(0.06 * ambientOpacity),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 200
+                        )
+                        .frame(width: 400, height: 400)
+                        .scaleEffect(ambientScale * 1.1)
+                    }
+                }
                 .shadow(
                     color: DS.Color.Accent.primary.opacity(isBreathing ? 0.15 : 0.25),
                     radius: isBreathing ? 20 : 12
@@ -107,6 +110,13 @@ struct SplashView: View {
                         .opacity(subtitleOpacity)
                         .offset(y: subtitleOffset)
                 }
+            }
+            // Tell the ZStack to vertically center on the claw marks (top
+            // 100pt of the VStack) instead of the whole VStack, so the icon
+            // sits at true screen-center and the title hangs below it.
+            .alignmentGuide(VerticalAlignment.center) { d in
+                // 50pt = center of the 100pt claw-marks frame at the top
+                50
             }
         }
         .onAppear {
