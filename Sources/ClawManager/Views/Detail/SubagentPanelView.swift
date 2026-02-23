@@ -53,13 +53,17 @@ struct SubagentPanelView: View {
             if isExpanded {
                 Divider().overlay(DS.Color.Border.subtle)
 
-                VStack(spacing: DS.Space.xs) {
-                    ForEach(subagents) { subagent in
-                        SubagentRowView(subagent: subagent)
+                ScrollView {
+                    VStack(spacing: DS.Space.xs) {
+                        ForEach(subagents) { subagent in
+                            SubagentRowView(subagent: subagent)
+                        }
                     }
+                    .padding(.horizontal, DS.Space.md)
+                    .padding(.vertical, DS.Space.sm)
                 }
-                .padding(.horizontal, DS.Space.md)
-                .padding(.vertical, DS.Space.sm)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: 240)
             }
         }
         .background(DS.Color.Surface.raised)
