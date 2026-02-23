@@ -7,6 +7,7 @@ struct SessionSummary: Identifiable, Sendable, Equatable {
         lhs.lastActivity == rhs.lastActivity &&
         lhs.pid == rhs.pid &&
         lhs.pendingInteraction == rhs.pendingInteraction &&
+        lhs.permissionMode == rhs.permissionMode &&
         lhs.messageCount == rhs.messageCount &&
         lhs.subagentCount == rhs.subagentCount
     }
@@ -28,6 +29,7 @@ struct SessionSummary: Identifiable, Sendable, Equatable {
     let subagentCount: Int
     let lastMessages: [MessagePreview]
     var pendingInteraction: PendingInteraction?
+    var permissionMode: PermissionMode?
 }
 
 struct SessionDetail: Sendable {

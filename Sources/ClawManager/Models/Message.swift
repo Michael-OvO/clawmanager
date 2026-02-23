@@ -1,6 +1,6 @@
 import Foundation
 
-struct ParsedMessage: Identifiable, Sendable {
+struct ParsedMessage: Identifiable, Equatable, Sendable {
     let id: String
     let type: MessageType
     let timestamp: Date?
@@ -12,6 +12,7 @@ struct ParsedMessage: Identifiable, Sendable {
     let version: String?
     let sessionId: String?
     let cwd: String?
+    let permissionMode: String?  // Only on user entries: "default", "acceptEdits", "plan"
 
     enum MessageType: String, Sendable {
         case user
@@ -29,7 +30,7 @@ struct ParsedMessage: Identifiable, Sendable {
     }
 }
 
-enum MessageContent: Identifiable, Sendable {
+enum MessageContent: Identifiable, Equatable, Sendable {
     case text(String)
     case thinking(String)
     case toolUse(id: String, name: String, inputJSON: String)

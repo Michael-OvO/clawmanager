@@ -111,6 +111,7 @@ enum JSONLParser {
     // MARK: - Pending Interaction Detection
 
     /// Detect pending interactions: unanswered tool_use blocks in the last assistant message.
+    /// Returns a richly-typed PendingInteraction with parsed tool input, questions, or plan.
     static func detectPendingInteraction(in messages: [ParsedMessage]) -> PendingInteraction? {
         guard let lastAssistantIdx = messages.lastIndex(where: { $0.type == .assistant }) else {
             return nil
@@ -143,16 +144,54 @@ enum JSONLParser {
             return nil
         }
 
-        let isQuestion = pending.name == "AskUserQuestion"
-        let questionText: String? = isQuestion ? extractQuestionText(from: pending.inputJSON) : nil
+        // Determine interaction type and parse structured data
+        switch pending.name {
+        case "AskUserQuestion":
+            return PendingInteraction(
+                type: .question,
+                toolUseId: pending.id,
+                toolName: pending.name,
+                toolInputJSON: pending.inputJSON,
+                toolInput: nil,
+                questions: Question.parseAll(from: pending.inputJSON),
+                planMarkdown: nil
+            )
 
-        return PendingInteraction(
-            type: isQuestion ? .question : .permission,
-            toolUseId: pending.id,
-            toolName: pending.name,
-            toolInputJSON: pending.inputJSON,
-            questionText: questionText
-        )
+        case "ExitPlanMode":
+            let planMd = extractPlanMarkdown(from: pending.inputJSON)
+            return PendingInteraction(
+                type: .planReview,
+                toolUseId: pending.id,
+                toolName: pending.name,
+                toolInputJSON: pending.inputJSON,
+                toolInput: nil,
+                questions: nil,
+                planMarkdown: planMd
+            )
+
+        default:
+            return PendingInteraction(
+                type: .toolApproval,
+                toolUseId: pending.id,
+                toolName: pending.name,
+                toolInputJSON: pending.inputJSON,
+                toolInput: ToolInput.parse(from: pending.inputJSON),
+                questions: nil,
+                planMarkdown: nil
+            )
+        }
+    }
+
+    // MARK: - Permission Mode Extraction
+
+    /// Extract the most recent permission mode from user entries.
+    static func extractPermissionMode(from messages: [ParsedMessage]) -> PermissionMode? {
+        for msg in messages.reversed() where msg.type == .user {
+            if let mode = msg.permissionMode {
+                return PermissionMode(rawValue: mode)
+            }
+        }
+        return nil
     }
 
     // MARK: - Preview Extraction
@@ -206,6 +245,7 @@ enum JSONLParser {
 
         let timestamp = (json["timestamp"] as? String).flatMap { Formatters.parseISO8601($0) }
         let uuid = json["uuid"] as? String ?? UUID().uuidString
+        let permMode = json["permissionMode"] as? String  // Top-level field on user entries
 
         switch msgType {
         case .user, .assistant:
@@ -221,7 +261,8 @@ enum JSONLParser {
                 gitBranch: json["gitBranch"] as? String,
                 version: json["version"] as? String,
                 sessionId: json["sessionId"] as? String,
-                cwd: json["cwd"] as? String
+                cwd: json["cwd"] as? String,
+                permissionMode: permMode
             )
 
         case .progress, .queueOperation, .fileHistorySnapshot, .system:
@@ -232,7 +273,8 @@ enum JSONLParser {
                 gitBranch: json["gitBranch"] as? String,
                 version: json["version"] as? String,
                 sessionId: json["sessionId"] as? String,
-                cwd: json["cwd"] as? String
+                cwd: json["cwd"] as? String,
+                permissionMode: permMode
             )
 
         case .unknown:
@@ -294,11 +336,10 @@ enum JSONLParser {
 
     // MARK: - Helpers
 
-    private static func extractQuestionText(from inputJSON: String) -> String? {
+    private static func extractPlanMarkdown(from inputJSON: String) -> String? {
         guard let data = inputJSON.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return json["question"] as? String
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return json["plan"] as? String
     }
 }

@@ -161,6 +161,7 @@ actor SessionDiscoveryService {
         let previews = JSONLParser.extractPreviews(from: tail, count: 4)
         let pending = JSONLParser.detectPendingInteraction(in: tail)
         let (slug, gitBranch, cliVersion, model) = JSONLParser.extractMetadata(from: tail)
+        let permMode = JSONLParser.extractPermissionMode(from: tail)
 
         let proc = processes.first { $0.sessionId == sessionId }
         let pid = proc?.pid
@@ -187,7 +188,8 @@ actor SessionDiscoveryService {
             messageCount: tail.count,
             subagentCount: subagentCount,
             lastMessages: previews,
-            pendingInteraction: pending
+            pendingInteraction: pending,
+            permissionMode: permMode
         )
     }
 
