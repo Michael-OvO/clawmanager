@@ -7,7 +7,7 @@ struct ClawManagerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup {
+        Window("ClawManager", id: "main") {
             ZStack {
                 if uiState.showSplash {
                     SplashView {
